@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.miguelhalys</groupId>
+    <artifactId>testing-spark-docker-maven</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+
+    <properties>
+        <maven.compiler.source>8</maven.compiler.source>
+        <maven.compiler.target>8</maven.compiler.target>
+        <encoding>UTF-8</encoding>
+        <scala.tools.version>2.11</scala.tools.version>
+        <scala.version>2.11.11</scala.version>
+        <spark.version>2.4.5</spark.version>
+        <scalatest.version>3.0.4</scalatest.version>
+        <spark-testing-base.version>${spark.version}_0.14.0</spark-testing-base.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-core_${scala.tools.version}</artifactId>
+            <version>${spark.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-sql_${scala.tools.version}</artifactId>
+            <version>${spark.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.scalatest</groupId>
+            <artifactId>scalatest_${scala.tools.version}</artifactId>
+            <version>${scalatest.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.holdenkarau</groupId>
+            <artifactId>spark-testing-base_${scala.tools.version}</artifactId>
+            <version>${spark-testing-base.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>net.alchim31.maven</groupId>
+                <artifactId>scala-maven-plugin</artifactId>
+                <version>3.3.1</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>compile</goal>
+                            <goal>testCompile</goal>
+                        </goals>
+                        <configuration>
+                            <recompileMode>incremental</recompileMode>
+                            <scalaVersion>${scala.version}</scalaVersion>
+                            <args>
+                                <arg>-dependencyfile</arg>
+                                <arg>${project.build.directory}/.scala_dependencies</arg>
+                            </args>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.scalatest</groupId>
+                <artifactId>scalatest-maven-plugin</artifactId>
+                <version>1.0</version>
+                <executions>
+                    <execution>
+                        <id>test</id>
+                        <goals>
+                            <goal>test</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>1.5</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <shadedArtifactAttached>true</shadedArtifactAttached>
+                            <shadedClassifierName>jar-with-dependencies</shadedClassifierName>
+                            <artifactSet>
+                                <includes>
+                                    <include>*:*</include>
+                                </includes>
+                            </artifactSet>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin> <!-- plugin tag: defines a plugin by its coordinates: groupId + artifactId + version-->
+                <groupId>io.fabric8</groupId>
+                <artifactId>docker-maven-plugin</artifactId>
+                <version>0.34.1</version>
+                <configuration>
+                    <images>
+                        <image>
+                            <alias>spark</alias> <!-- just an alias -->
+                            <name>bitnami/spark:${spark.version}</name> <!-- defines what image to use: in this case as we are testing a spark job, we use one with spark -->
+                            <run>
+                                <workingDir> <!-- working directory for the Docker user, needed to load our spark job -->
+                                    /opt/container_import
+                                </workingDir>
+                                <cmd> <!-- Docker command: tells maven-docker-plugin what to do with the Docker container -->
+                                    <shell> <!-- The spark job as we would define in our orchestrator. Note that:
+                                     1. the Spark job jar is parametrized with the maven properties of the project so it is resolved automatically
+                                     2. the program arguments are the input and output paths of the sample ETL that maps to the Maven target directory -->
+                                        spark-submit --deploy-mode client
+                                        --conf spark.yarn.submit.waitAppCompletion=false
+                                        --class com.miguelhalys.Main
+                                        target/${project.name}-${project.version}-jar-with-dependencies.jar
+                                        target/test-classes/data/hound-of-baskerville.txt
+                                        target/output
+                                    </shell>
+                                </cmd>
+                                <volumes>
+                                    <bind><!-- volume definition, maps our laptop directory ${basedir} to the working directory for the Docker user. -->
+                                        <volume>${basedir}:/opt/container_import</volume>
+                                    </bind>
+                                </volumes>
+                            </run>
+                        </image>
+                    </images>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>
